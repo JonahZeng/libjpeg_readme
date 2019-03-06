@@ -1,23 +1,23 @@
-# 使用IJG JPEG LIBRARY
-----------------------------
+使用IJG JPEG LIBRARY
+========
 &ensp;&ensp;&ensp;&ensp;该文件描述了如何在应用程序中使用IJG JPEG库程序。 如果要编写使用该库的程序，请阅读它。
 
 &ensp;&ensp;&ensp;&ensp;文件example.c提供了大量注释的框架代码，用于调用JPEG库。 另请参阅jpeglib.h（应用程序要使用的包含文件）程序）有关数据结构和函数参数列表的完整详细信息。当然，库源代码是最终的参考。
 
 &ensp;&ensp;&ensp;&ensp;请注意，目前应用程序接口已发生**重大**更改，区别于IJG第4版和早期版本提供。旧版本存在一些固有的缺陷, 在我们不断添加新特性的时候我们尽量最小化接口的改动，因此积累了很多坏的设计；在重写第五版的时候我们牺牲了向后兼容性，但是我们认为这是值得的；
 
-## **目录表**
+# 目录表
 -----------------
 
-### 总览：
+## 总览：
 * 库提供的功能
 * 典型用法
-### 基本用法:
+## 基本用法:
 * 数据形式
 * 压缩细节
 * 解压细节
 * 编译方法: 需包含的头文件, 链接, 等等
-### 高级特性:
+## 高级特性:
 * 压缩参数选项
 * 解压缩参数选项
 * 特殊的色彩空间
@@ -40,10 +40,10 @@
 在尝试用库编程之前，您应该至少阅读概述和基本用法部分。高级功能的部分可以你需要它们的时候阅读。
 
 
-## **总览**
+# 总览
 ------------
 
-### **库提供的功能**
+## 库提供的功能
 
 
 &ensp;&ensp;&ensp;&ensp;IJG JPEG库提供C代码来读取和写入JPEG压缩图像文件。 周围的应用程序接每次收或提供一个扫描行未经压缩的图像数据。所有颜色转换和其他预处理/后处理的细节都可以交给库处理。
@@ -65,7 +65,7 @@
 &ensp;&ensp;&ensp;&ensp;本身而言，库只处理交换JPEG数据流---特别是广泛使用的JFIF文件格式。 该库可以被周围的代码调用来处理交换或缩略的嵌入在更复杂的文件格式中JPEG数据。比如, LIBTIFF库使用了这个库来支持在TIFF文件中使用JPEG压缩。
 
 
-### **典型用法概述**
+## 典型用法概述
 
 JPEG压缩操作的大致流程是:
 
@@ -109,10 +109,10 @@ JPEG压缩操作的大致流程是:
 &ensp;&ensp;&ensp;&ensp;提供合适的source/destination管理器，解压和压缩操作都可以以增量内存--内存的方式完成。具体细节请参考"I/O suspension".
 
 
-## **基本的库使用方法**
+# 基本的库使用方法
 ----------
 
-### **数据形式**
+## 数据形式
 
 &ensp;&ensp;&ensp;&ensp;在深入了解程序细节之前，了解一下JPEG库期望或返回的图像数据格式是非常帮助的。
  
@@ -143,12 +143,12 @@ JPEG压缩操作的大致流程是:
 注意因为色彩空间索引值是存储在JSAMPLE中，所以色彩种类数量被JSAMPLE位宽限制：比如 8 bit的JPEG最多表示256种色彩。
 
 
-### **压缩操作细节**
-------
+## 压缩操作细节
+
 
 这里我们再次回顾一下JPEG压缩操作的概述。
 
-#### 分配并初始化一个JPEG compression对象。
+### 分配并初始化一个JPEG compression对象。
 &ensp;&ensp;&ensp;&ensp;一个JPEG compression对象一个"struct jpeg_compress_struct"实例。（它也有一堆通过malloc（）分配的子结构，但是应用程序不直接控制它们。）如果是在一个例程执行整个JPEG压缩序列，这个结构可以是一个调用过程中的局部变量。 否则它可以是静态的或来自malloc（）分配的堆变量。
 
 &ensp;&ensp;&ensp;&ensp;你还需要一个结构体来表示JPEG错误处理句柄。在JPEG库里面，这个结构体是`struct jpeg_error_mgr`。如果你想自己实现一个错误处理器，通常情况下你会把`jpeg_error_mgr struct` 这个结构嵌入到一个大的结构体当中；这部分我们会在后续的"Errorhandling"介绍。现在我们假设你只使用默认的错误处理器，默认的错误处理器将会把error/warning信息打印出来。
@@ -166,7 +166,7 @@ JPEG压缩操作的大致流程是:
 `jpeg_create_compress`分配一个小部分堆内存，所以它可能会调用失败，如果内存耗尽的话。这种情况下，程序会通过错误处理器退出。这既是为什么一定要首先初始化错误管理器。
 
 
-#### 为压缩后的数据指定输出目标(比如，一个文件)
+### 为压缩后的数据指定输出目标(比如，一个文件)
 
 &ensp;&ensp;&ensp;&ensp;如我们之前所述，JPEG库会把压缩后的数据传递给`data destination`模块， JPEG库包含了一个`data destination`模块，这个模块负责如何把压缩后的数据写入标准输出流，你可以使用自定义的`data destination`模块，如果你想做一点其他事情的话，这部分我们放在后面介绍。如果你使用标准的`destination module`，你一定要首先打开目标输出流，典型的代码如下：
 ```C++
@@ -185,7 +185,7 @@ JPEG压缩操作的大致流程是:
 &ensp;&ensp;&ensp;&ensp;如果方便的话你还可以在设置了其他参数后指定`data destination`。但是一般不要在调用 `jpeg_start_compress()` and `jpeg_finish_compress()`期间去改变`data destination`.
 
 
-#### 压缩设置参数，包括图像大小和色彩空间
+### 压缩设置参数，包括图像大小和色彩空间
 
 你必须提供如下关于源图像的信息，并在代码里设置JPEG对象(cinfo structure)对应的字段：
 
@@ -213,7 +213,7 @@ JPEG压缩操作的大致流程是:
 	/* Make optional parameter settings here */
 ```
 
-#### **调用jpeg_start_compress(...);**
+### 调用jpeg_start_compress(...);
 
 &ensp;&ensp;&ensp;&ensp;在你已经确定了data destination以后并且设置好了所有的必须参数（包括图像大小等等）后，调用`jpeg_start_compress()` 开始进入压缩循环。开始初始化内部工作状态，分配工作存储空间，触发生成JPEG数据流的头信息。
 
@@ -226,7 +226,7 @@ JPEG压缩操作的大致流程是:
 一旦调用了`jpeg_start_compress()`，你就不能改变JPEG参数或者JPEG对象的其他字段了，直到压缩循环停止。
 
 
-#### **while (scan lines remain to be written) jpeg_write_scanlines(...);**
+### while (scan lines remain to be written) jpeg_write_scanlines(...);
 
 &ensp;&ensp;&ensp;&ensp;现在通过一次或者多册调用 `jpeg_write_scanlines()`把所需要的图像数据写入到stdio数据流中，你可以在每次调用这个函数的时候传入一行或者多行数据，最大为整个图像的高度。在大多数程序里，每次调用`jpeg_write_scanlines()`只传一行或者若干行是一个便捷做法。传入的数据格式，如上面的"Data formats"所要求的那样。
 
@@ -255,7 +255,7 @@ JPEG压缩操作的大致流程是:
 除这两种情况，其他情况下返回值都等于`next_scanline`字段值。
 
 
-#### **jpeg_finish_compress(...);**
+### jpeg_finish_compress(...);
 
 &ensp;&ensp;&ensp;&ensp;在所有的图像数据被写入到缓冲区后，调用`jpeg_finish_compress()`来完成压缩循环。这一步对于确保最后一个缓冲区数据写入数据目标至关重要。`jpeg_finish_compress()`还释放与JPEG对象相关的内存。
 
@@ -272,7 +272,7 @@ JPEG压缩操作的大致流程是:
 在完成一次压缩以后，你可能想保留JPEG对象常驻在内存中，或者你想使用这个对象压缩另一个图像。在这种情况下，你将要正确返回回到第2，3，4步。如果你不改变目标管理器，则新的数据流会被写入到同样的目标文件中。如果你不改变压缩参数，则新的压缩数据流将使用之前的压缩参数。注意一下，你可以自由改变图像的几何尺寸在压缩循环间歇期。但是一旦你重新设置了色彩空间的话，则应该再次调用`jpeg_set_defaults()`来使压缩参数适应新的色彩空间。然后你再开始前面的第三步：调用`jpeg_start_compress(...);`
 
 
-#### **释放JPEG压缩对象**
+### 释放JPEG压缩对象
 
 &ensp;&ensp;&ensp;&ensp;完成JPEG压缩后，通过调用jpeg_destroy_compress()将其销毁。 这将释放所有辅助内存（无论对象的先前状态如何）。 或者你可以调用jpeg_destroy（），它适用于压缩或解压缩对象---如果你在压缩和解压缩的情况下共享代码，这可能会更方便。 （实际上，除了传递已声明的指针类型之外，这些例程是等效的。为了避免来自ANSI C编译器的抱怨，应该给jpeg_destroy()传递j_common_ptr类型。）
 
@@ -283,7 +283,7 @@ JPEG压缩操作的大致流程是:
 	jpeg_destroy_compress(&cinfo);
 ```
 
-#### **中断**
+### 中断
 
 &ensp;&ensp;&ensp;&ensp;如果你决定中断一个压缩循环，你可以用如下2种方式做收尾清理工作：
 
@@ -294,3 +294,152 @@ JPEG压缩操作的大致流程是:
 &ensp;&ensp;&ensp;&ensp;请注意：清理数据目标输出，是你的责任；这些例程都不会调用`term destination()`。（有关详细信息，请参阅下面的“Compressed data handling”。）
 
 &ensp;&ensp;&ensp;&ensp;`jpeg_destroy()`和`jpeg_abort()` 是仅有的2种安全方式处理去处理报告了错误的JPEG对象，JPEG对象调用error_exit退出。(请参考更多关于"Error handling"的信息)。JPEG对象的内部状态这个时候是不正常状态，`jpeg_destroy()`和`jpeg_abort()` 会把JPEG对象恢复到一种已知状态。
+
+
+## 解压缩细节
+
+&ensp;&ensp;&ensp;&ensp;再回顾一下概述中提到的JPEG解压操作。
+
+### 1 分配并初始化一个JPEG解压缩对象
+
+&ensp;&ensp;&ensp;&ensp;这一步类似与前面的创建并初始化JPEG压缩对象，除了类型变成了`struct jpeg_decompress_struct`，你要使用`jpeg_create_decompress()`来做初始化，错误处理对象和之前完全一样。 
+
+典型代码：
+```c
+	struct jpeg_decompress_struct cinfo;
+	struct jpeg_error_mgr jerr;
+	...
+	cinfo.err = jpeg_std_error(&jerr);
+	jpeg_create_decompress(&cinfo);
+```
+(这里和IJG的代码中，我们总是使用`cinfo`这个变量名来表示JPEG压缩和解压缩对象。)
+
+
+### 2 指定一个待解压的源对象(比如，一个文件)
+
+&ensp;&ensp;&ensp;&ensp;JPEG库从"data
+source" module读取已被压缩的数据，JPEG库包含了一个data source module，这个module已知如何从stdio stream读取数据。 如果你想做一点其他事情，可以自定义一个source module，这个在后面的章节讨论。
+
+&ensp;&ensp;&ensp;&ensp;如果你使用标准的source module，你必须首先打开目标源标准输入流stdio stream，这一步的典型代码如下：
+```c
+	FILE * infile;
+	...
+	if ((infile = fopen(filename, "rb")) == NULL) {
+	    fprintf(stderr, "can't open %s\n", filename);
+	    exit(1);
+	}
+	jpeg_stdio_src(&cinfo, infile);
+```
+这里的最后一行代码调用了标准源输入module。
+
+**WARNING**: 保持被压缩的二进制数据不被篡改是至关重要的，在非unix系统中，stdio可能会执行添加换行符之类的破坏操作，为此，在打开文件的时候，确保开启"b二进制模式。或者通过setmode()、另一个路径把stdio设置成二进制模式。cjpeg.c和djpeg.c提供了一些可以在多个系统上正常工作的代码。
+
+&ensp;&ensp;&ensp;&ensp;在调用`jpeg_read_header()`和`jpeg_finish_decompress()`期间不要去修改源数据，如果你想从一个单一的源文件读取一系列的JPEG图像，你应该重复调用`jpeg_read_header()`到`jpeg_finish_decompress()` 之间的序列，但是不需要重复初始化JPEG对象和data source module；这样做可以防止读取已经丢弃的图像文件。
+
+
+### 3 调用`jpeg_read_header()`获取文件头信息
+
+典型代码：
+```c
+	jpeg_read_header(&cinfo, TRUE);
+```
+&ensp;&ensp;&ensp;&ensp;这个步骤会读取JPEG数据流的头标记信息，直到被压缩的data开始位置。图像的尺寸信息和其他信息会被读取并存储到JPEG对象中去。程序应该去查询这些信息来选择合适的解压参数。
+
+如果碰到如下2种情况，则需要更复杂的代码去处理：
+  * JPEG文件使用了suspending data源 --- 这种情况下，`jpeg_read_header()`将会提前返回，将不会读取完整的头信息。详情请参阅下面的高级主题"I/O suspension"， 正常情况下的stdio source manager不会碰到这种情况。
+  * 需要处理缩略JPEG文件---详情请参考**abbreviated datastreams**。标准的程序只处理直接交换数据的JPEG，所以我们也不必很关注这种情况。
+
+&ensp;&ensp;&ensp;&ensp;如果你仅仅只想读取JPEG文件的一些头信息，那么你可以在这里打住，这种情况下，通过调用`jpeg_destroy()`去销毁JPEG对象，或者在选择一个新的源数据并读取它的头信息之前调用`jpeg_abort()`将JPEG对象重置为空闲态。
+
+### 4 设置解压参数
+
+jpeg_read_header() sets appropriate default decompression parameters based on
+the properties of the image (in particular, its colorspace).  However, you
+may well want to alter these defaults before beginning the decompression.
+For example, the default is to produce full color output from a color file.
+If you want colormapped output you must ask for it.  Other options allow the
+returned image to be scaled and allow various speed/quality tradeoffs to be
+selected.  "Decompression parameter selection", below, gives details.
+
+如果默认参数是合适的，那这一步你什么都不用做。
+
+Note that all default values are set by each call to jpeg_read_header().
+If you reuse a decompression object, you cannot expect your parameter
+settings to be preserved across cycles, as you can for compression.
+You must set desired parameter values each time.
+
+
+### 5 jpeg_start_decompress(...);
+
+一旦解压参数设置完成，就可以调用`jpeg_start_decompress()`来开始解压。这个函数初始化内部状态，分配内存，准备返回数据。
+
+典型代码：
+```c
+	jpeg_start_decompress(&cinfo);
+```
+如果你申请了multi-pass operating mode，比如2-pass色彩量化，`jpeg_start_decompress()`将做完所有的准备工作直到可以开始输出数据。这种情况下`jpeg_start_decompress()`将需要一小会时间来完成操作。但是对于single-scan (non progressive)的JPEG文件，并且使用默认解压参数的情况来说，这种情况不会发生，`jpeg_start_decompress()`将会很快返回。
+
+在调用这个函数之后，最终的输出图像维度，包括任何要求的缩放，都可以再JPEG对象中使用了。色彩空间也是如此，如果要求输出结果经过色彩映射，则如下的字段是有用的：
+
+|          字段           |                  含义                  |
+| :---------------------: | :------------------------------------: |
+|      output_width       |         image width, as scaled         |
+|      output_height      |        image height, as scaled         |
+|  out_color_components   | of color components in out_color_space |
+|    output_components    | of color components returned per pixel |
+|        colormap         |     the selected colormap, if any      |
+| actual_number_of_colors |     number of entries in colormap      |
+
+ 当输出是单一量化色彩时output_components = 1，就是说色彩空间只用一个索引就足够；否则的话就等`out_color_components`，这个值代表了JSAMPLE在输出序列里包含了几个子像素。
+
+Typically you will need to allocate data buffers to hold the incoming image.
+You will need output_width * output_components JSAMPLEs per scanline in your
+output buffer, and a total of output_height scanlines will be returned.
+
+Note: if you are using the JPEG library's internal memory manager to allocate
+data buffers (as djpeg does), then the manager's protocol requires that you
+request large buffers *before* calling jpeg_start_decompress().  This is a
+little tricky since the output_XXX fields are not normally valid then.  You
+can make them valid by calling jpeg_calc_output_dimensions() after setting the
+relevant parameters (scaling, output color space, and quantization flag).
+
+
+### 6 while (scan lines remain to be read) jpeg_read_scanlines(...);
+
+&ensp;&ensp;&ensp;&ensp;现在你可以通过调用`jpeg_read_scanlines()`一次或者多次来读取解压后的图像数据。在每次调用的时候，你都要传递一个最大扫描行数值（比如，工作缓存的高度），`jpeg_read_scanlines()`将会返回读取的行数，最大到你传递的行数，返回的数值代表真实读取的行数。返回的数据格式如上面的"Data
+formats"章节所讨论的那样，不要忘了灰度图和彩色图像返回的数据格式是不同的。
+
+&ensp;&ensp;&ensp;&ensp;返回的图像数据是按照top-to-bottom扫描顺序排列的。如果你一定需要反向bottom-to-top排列，你可以使用JPEG库的虚拟矩阵机制高效地反转。示例代码可以在示范程序djpeg当中找到。
+
+&ensp;&ensp;&ensp;&ensp;JPEG库包含一个计数器，表明当前返回了多少个扫描行数据，这个计数器就是JPEG对象的`output_scanline`属性。通常我们都使用这个值作为循环计数器，所以循环大致都是这个样子的：`while (cinfo.output_scanline < cinfo.output_height)`。（注意测试条件不应当是等于image_height，除非你永不使用缩放，image_height指的是未缩放的源图像高度）`jpeg_read_scanlines(...)`的返回值等于`output_scanline`的变动值。
+
+&ensp;&ensp;&ensp;&ensp;如果你不使用suspending data source，那么调用`jpeg_read_scanlines()`会安全的保证每次调用都会读取至少一行数据，知道达到图像的底部。
+
+&ensp;&ensp;&ensp;&ensp;如果你使用的缓冲区大小超过一行，那么无法保证`jpeg_read_scanlines()`会正确的填满缓冲区。(目前的实现仅仅在调用的时候返回一些扫描行，而不管你传递了多大的缓冲区)，所以你必须提供一个循环去调用`jpeg_read_scanlines()`知道整个图像被读取完。 
+
+### 7 jpeg_finish_decompress(...);
+
+&ensp;&ensp;&ensp;&ensp;读取完所有的图像数据以后，调用`jpeg_finish_decompress()`来完成解压，这一步会引发释放和JPEG对象相关联的工作内存。
+
+典型代码:
+```c
+	jpeg_finish_decompress(&cinfo);
+```
+&ensp;&ensp;&ensp;&ensp;如果使用stdio source manager，不要忘了关闭stdio stream。
+
+&ensp;&ensp;&ensp;&ensp;在全部读取完扫描行数据之前调用`jpeg_finish_decompress()`是错误行为，如果你想提前中断解压，通过调用`jpeg_abort()`来实现。 
+
+&ensp;&ensp;&ensp;&ensp;在完成解压循环以后，你可能想销毁JPEG对象，也可能想留着用于下一次解压；如果想复用这个JPEG对象，这个时候需要回到步骤2或者3，如果你不改变source manager，则下一次读取的图像和这一次的图像是一样的。
+
+### 8 释放JPEG解压对象
+
+解压完成以后需要销毁JPEG解压对象，通过调用`jpeg_destroy_decompress()`或者`jpeg_destroy()`实现这一目的。前面关于销毁压缩对象的描述这里也是适用的。 
+
+典型代码:
+```c
+	jpeg_destroy_decompress(&cinfo);
+```
+
+### 9 中断
+
+通过调用`jpeg_destroy_decompress()`或者`jpeg_destroy()`中断解压过程，这两个函数将销毁JPEG对象`jpeg_abort_decompress()`或者`jpeg_abort()`则不销毁JPEG对象，和之前的关于压缩中断所说的一样。
