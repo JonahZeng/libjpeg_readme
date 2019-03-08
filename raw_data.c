@@ -1,7 +1,6 @@
-# libjpeg解压原始YUV数据
-## jpeg解码获得rgb数据
-先看一下libjpeg提供的example.c文件中关于如何解压的：
-```c
+//# libjpeg解压原始YUV数据
+//## jpeg解码获得rgb数据
+//先看一下libjpeg提供的example.c文件中关于如何解压的：
 GLOBAL(int) read_JPEG_file (char * filename)
 {
   struct jpeg_decompress_struct cinfo;
@@ -50,12 +49,12 @@ GLOBAL(int) read_JPEG_file (char * filename)
 
   return 1;
 }
-```
-这个例子解压出来的是rgb排列的数据，而不是YUV444/422/420格式，libjpeg根据指定的colorspace做了色彩空间转换。
 
-## jpeg文件解码获取yuv数据
-如下的例子展示如何获取真实的YUV数据：
-```c
+//这个例子解压出来的是rgb排列的数据，而不是YUV444/422/420格式，libjpeg根据指定的colorspace做了色彩空间转换。
+
+//## jpeg文件解码获取yuv数据
+//如下的例子展示如何获取真实的YUV数据：
+
 GLOBAL(int) read_JPEG_file(char * filename, char* out_filename)
 {
     struct jpeg_decompress_struct cinfo;
@@ -201,4 +200,4 @@ GLOBAL(int) read_JPEG_file(char * filename, char* out_filename)
 
     return 1;
 }
-```
+
