@@ -44,7 +44,7 @@
 	- [Buffered-image mode](#buffered-image-mode)
 	- [Abbreviated datastreams and multiple images](#abbreviated-datastreams-and-multiple-images)
 	- [Special markers](#special-markers)
-	- [Raw (downsampled) image data](#raw-downsampled-image-data)
+	- [原始的下采样数据](#%E5%8E%9F%E5%A7%8B%E7%9A%84%E4%B8%8B%E9%87%87%E6%A0%B7%E6%95%B0%E6%8D%AE)
 	- [Really raw data: DCT coefficients](#really-raw-data-dct-coefficients)
 	- [Progress monitoring](#progress-monitoring)
 	- [Memory management](#memory-management)
@@ -2218,129 +2218,51 @@ A simple example of an external COM processor can be found in djpeg.c.
 Also, see jpegtran.c for an example of using jpeg_save_markers.
 
 
-## Raw (downsampled) image data
+## 原始的下采样数据
 
-Some applications need to supply already-downsampled image data to the JPEG
-compressor, or to receive raw downsampled data from the decompressor.  The
-library supports this requirement by allowing the application to write or
-read raw data, bypassing the normal preprocessing or postprocessing steps.
-The interface is different from the standard one and is somewhat harder to
-use.  If your interest is merely in bypassing color conversion, we recommend
-that you use the standard interface and simply set jpeg_color_space =
-in_color_space (or jpeg_color_space = out_color_space for decompression).
-The mechanism described in this section is necessary only to supply or
-receive downsampled image data, in which not all components have the same
-dimensions.
+&ensp;&ensp;&ensp;&ensp;一些程序要求提供已经经过downsample的图像数据给JPEG压缩器，或者要求从解压器接收经过下采样的数据。JPEG库通过允许读写下采样的原始数据支持这样的要求，而不经过预处理或者后处理步骤。这样的操作接口相比标准操作有点复杂。如果你仅仅只是想省略色域转换，你可以仅仅在压缩的时候设置`jpeg_color_space = in_color_space`，在解压的时候设置`jpeg_color_space = out_color_space`来达到这个目的。本节讨论的必要内容是提供或接受经过下采样的图像数据，它们的各个分量的几何尺寸是不同的。
 
+&ensp;&ensp;&ensp;&ensp;在压缩阶段，你必须提供在JPEG文件里使用的色彩空间的图像数据，并根据JPEG参数里设置的下采样比例进行下采样操作。你必须按照JPEG库的内部格式要求提供数据，格式为`JSAMPIMAGE`，它指向JSAMPARRAY的指针数组，每个JSAMPARRAY指向一个成员分量。这样的结构是必需的，因为各个分量占据的空间大小是不一样的。如果图像的维度不是MCU的整倍数，你必须手动添加额外的数据进行对齐，通常是重复最后一行/一列。最后的空间长度，宽度必需是DCT block的整倍数：这是因为，每个色彩分量经过下采样的行都必需包含整数倍的DCT block size，对于很多应用来说，标准的图像尺寸经常是DCT block size的整数倍，所以可以省略额外的对齐操作。
 
-To compress raw data, you must supply the data in the colorspace to be used
-in the JPEG file (please read the earlier section on Special color spaces)
-and downsampled to the sampling factors specified in the JPEG parameters.
-You must supply the data in the format used internally by the JPEG library,
-namely a JSAMPIMAGE array.  This is an array of pointers to two-dimensional
-arrays, each of type JSAMPARRAY.  Each 2-D array holds the values for one
-color component.  This structure is necessary since the components are of
-different sizes.  If the image dimensions are not a multiple of the MCU size,
-you must also pad the data correctly (usually, this is done by replicating
-the last column and/or row).  The data must be padded to a multiple of a DCT
-block in each component: that is, each downsampled row must contain a
-multiple of block_size valid samples, and there must be a multiple of
-block_size sample rows for each component.  (For applications such as
-conversion of digital TV images, the standard image size is usually a
-multiple of the DCT block size, so that no padding need actually be done.)
+&ensp;&ensp;&ensp;&ensp;压缩raw data的步骤和正常的步骤差不多，除了用`jpeg_write_raw_data()`代替`jpeg_write_scanlines()`。在调用`jpeg_start_compress()`之前，你必须完成以下设置：
 
-The procedure for compression of raw data is basically the same as normal
-compression, except that you call jpeg_write_raw_data() in place of
-jpeg_write_scanlines().  Before calling jpeg_start_compress(), you must do
-the following:
-  * Set cinfo->raw_data_in to TRUE.  (It is set FALSE by jpeg_set_defaults().)
-    This notifies the library that you will be supplying raw data.
-    Furthermore, set cinfo->do_fancy_downsampling to FALSE if you want to use
-    real downsampled data.  (It is set TRUE by jpeg_set_defaults().)
-  * Ensure jpeg_color_space is correct --- an explicit jpeg_set_colorspace()
-    call is a good idea.  Note that since color conversion is bypassed,
-    in_color_space is ignored, except that jpeg_set_defaults() uses it to
-    choose the default jpeg_color_space setting.
-  * Ensure the sampling factors, cinfo->comp_info[i].h_samp_factor and
-    cinfo->comp_info[i].v_samp_factor, are correct.  Since these indicate the
-    dimensions of the data you are supplying, it's wise to set them
-    explicitly, rather than assuming the library's defaults are what you want.
+  * 把`cinfo->raw_data_in`设置为`TRUE`。(默认情况下`jpeg_set_defaults()`会把这个设置为`FALSE`)，这个参数通知JPEG库，你提供的是raw data。然后把`cinfo->do_fancy_downsampling`设置为`FALSE`如果你提供经过下采样的数据的话。(这个值在调用`jpeg_set_defaults()`的时候会被设置为`TRUE`)
+  * 确保色彩空间设置正确。 --- 通过`jpeg_set_colorspace()`显式的设置色彩空间是个好办法。请注意，因为色彩转换在这里被略过，除非使用了`jpeg_set_defaults()`选择默认的jpeg_color_space。
+  * 确保采样因子系数正确`cinfo->comp_info[i].h_samp_factor`和`cinfo->comp_info[i].v_samp_factor`是正确的，因为这两个值表明了你提供的数据的尺寸维度，最好显式的设置这两个值，不要假设库提供的默认值符合你的需求。
 
-To pass raw data to the library, call jpeg_write_raw_data() in place of
-jpeg_write_scanlines().  The two routines work similarly except that
-jpeg_write_raw_data takes a JSAMPIMAGE data array rather than JSAMPARRAY.
-The scanlines count passed to and returned from jpeg_write_raw_data is
-measured in terms of the component with the largest v_samp_factor.
+&ensp;&ensp;&ensp;&ensp;要把raw data传递给JPEG库，你需要使用`jpeg_write_raw_data()`替换`jpeg_write_scanlines()`。这两个工作方式是类似的，除了一处不同：`jpeg_write_raw_data` 第二个参数是`JSAMPIMAGE`而不是原来的`JSAMPARRAY`。`jpeg_write_raw_data()`返回的扫描行数量是拥有最大`v_samp_factor`分量的行数。
 
-jpeg_write_raw_data() processes one MCU row per call, which is to say
-v_samp_factor*block_size sample rows of each component.  The passed num_lines
-value must be at least max_v_samp_factor*block_size, and the return value
-will be exactly that amount (or possibly some multiple of that amount, in
-future library versions).  This is true even on the last call at the bottom
-of the image; don't forget to pad your data as necessary.
+&ensp;&ensp;&ensp;&ensp;每调用一次`jpeg_write_raw_data()`，都将会处理一个MCU行数，也就是说，每次调用处理的是每个分量的`v_samp_factor*MCU block_size`行数。传递的第三个参数`num_lines`必须是满足最小条件：`max_v_samp_factor*block_size`，返回值一定是这个值（或者是这个值的整数倍，将来的版本中可能是这样）。即使是到了图像的底部，这个情况也是成立的；千万不要忘记申请的buff要进行block_size补齐。
 
-The required dimensions of the supplied data can be computed for each
-component as
-	cinfo->comp_info[i].width_in_blocks*block_size  samples per row
-	cinfo->comp_info[i].height_in_blocks*block_size rows in image
-after jpeg_start_compress() has initialized those fields.  If the valid data
-is smaller than this, it must be padded appropriately.  For some sampling
-factors and image sizes, additional dummy DCT blocks are inserted to make
-the image a multiple of the MCU dimensions.  The library creates such dummy
-blocks itself; it does not read them from your supplied data.  Therefore you
-need never pad by more than block_size samples.  An example may help here.
-Assume 2h2v downsampling of YCbCr data, that is
-	cinfo->comp_info[0].h_samp_factor = 2		for Y
-	cinfo->comp_info[0].v_samp_factor = 2
-	cinfo->comp_info[1].h_samp_factor = 1		for Cb
-	cinfo->comp_info[1].v_samp_factor = 1
-	cinfo->comp_info[2].h_samp_factor = 1		for Cr
-	cinfo->comp_info[2].v_samp_factor = 1
-and suppose that the nominal image dimensions (cinfo->image_width and
-cinfo->image_height) are 101x101 pixels.  Then jpeg_start_compress() will
-compute downsampled_width = 101 and width_in_blocks = 13 for Y,
-downsampled_width = 51 and width_in_blocks = 7 for Cb and Cr (and the same
-for the height fields).  You must pad the Y data to at least 13*8 = 104
-columns and rows, the Cb/Cr data to at least 7*8 = 56 columns and rows.  The
-MCU height is max_v_samp_factor = 2 DCT rows so you must pass at least 16
-scanlines on each call to jpeg_write_raw_data(), which is to say 16 actual
-sample rows of Y and 8 each of Cb and Cr.  A total of 7 MCU rows are needed,
-so you must pass a total of 7*16 = 112 "scanlines".  The last DCT block row
-of Y data is dummy, so it doesn't matter what you pass for it in the data
-arrays, but the scanlines count must total up to 112 so that all of the Cb
-and Cr data gets passed.
+进行压缩要求提供的各分量数据大小可以用如下公式计算：
 
-Output suspension is supported with raw-data compression: if the data
-destination module suspends, jpeg_write_raw_data() will return 0.
-In this case the same data rows must be passed again on the next call.
+```c
+cinfo->comp_info[i].width_in_blocks*block_size;  //samples per row
+cinfo->comp_info[i].height_in_blocks*block_size; //rows in image
+```
+&ensp;&ensp;&ensp;&ensp;在调用`jpeg_start_compress()`后这些值会被初始化。如果可用的数据小于这个尺寸，则一定要进行补齐。对于某些采样系数和图像尺寸，需要在末尾插入额外的DCT block来保证是MCU维度的整倍数。JPEG库会自己完成额外的DCT block添加，但它不是从你提供的数据读取。所以你永远不需要添加超过一个block size的数据来补齐。这里有一个例子，假设YUV420格式（长宽都缩减2倍）：
+```c
+cinfo->comp_info[0].h_samp_factor = 2;		//for Y
+cinfo->comp_info[0].v_samp_factor = 2;
+cinfo->comp_info[1].h_samp_factor = 1;		//for Cb
+cinfo->comp_info[1].v_samp_factor = 1;
+cinfo->comp_info[2].h_samp_factor = 1;		//for Cr
+cinfo->comp_info[2].v_samp_factor = 1;
+```
+&ensp;&ensp;&ensp;&ensp;我们假设名义上这个图片的尺寸`cinfo->image_width`和`cinfo->image_height`是101x101 pixels。然后调用`jpeg_start_compress()`将计算出Y通道的下采样宽度`downsampled_width = 101`，`width_in_blocks = 13`，Cb和Cr的
+`downsampled_width = 51` and `width_in_blocks = 7`，这里你必须对Y数据进行补齐，补齐到至少`13*8=104`行和列，Cb、Cr必须至少`7*8=56`行和列。MCU高度是`max_v_samp_factor = 2`x DCT rows，所以你每次调用`jpeg_write_raw_data()`需要传递至少16个扫描行，也就是说Y 16行，Cb、Cr 8行。总共需要7个MCU行，所以你需要分配至少112个扫描行，最后一个Y数据的DCT row是虚假无意义的，所以你传递什么都可以，但是一定要保证112行空间来使得Cb、Cr保持完整。
 
+&ensp;&ensp;&ensp;&ensp;在raw-data压缩过程中，输出中断是可以做到的：如果data destination module挂起，`jpeg_write_raw_data()`将返回0，这个时候一定要在下一次调用`jpeg_write_raw_data()`的时候传递相同的data rows。
 
-Decompression with raw data output implies bypassing all postprocessing.
-You must deal with the color space and sampling factors present in the
-incoming file.  If your application only handles, say, 2h1v YCbCr data,
-you must check for and fail on other color spaces or other sampling factors.
-The library will not convert to a different color space for you.
+&ensp;&ensp;&ensp;&ensp;解压raw data也就意味着省略所有的后处理操作（比如色彩空间转换），你必须自己处理色彩空间和采样系数，如果你的程序只处理比如YCbCr 422格式，那么你就必须检查是否有其他色彩空间和采样系数。JPEG库将不会为你做色彩空间转化。
 
-To obtain raw data output, set cinfo->raw_data_out = TRUE before
-jpeg_start_decompress() (it is set FALSE by jpeg_read_header()).  Be sure to
-verify that the color space and sampling factors are ones you can handle.
-Furthermore, set cinfo->do_fancy_upsampling = FALSE if you want to get real
-downsampled data (it is set TRUE by jpeg_read_header()).
-Then call jpeg_read_raw_data() in place of jpeg_read_scanlines().  The
-decompression process is otherwise the same as usual.
+&ensp;&ensp;&ensp;&ensp;为了获取raw data输出，要在`jpeg_start_decompress()`之前设置`cinfo->raw_data_out = TRUE` (这个值会被`jpeg_read_header()`设置为 FALSE )。 同时，你要确认色彩空间和采样系数是你需要的类型。然后再设置`cinfo->do_fancy_upsampling = FALSE`，如果你想获取真正的raw-data的话(这个值也被`jpeg_read_header()`设置为TRUE)。
+然后用`jpeg_read_raw_data()`取代`jpeg_read_scanlines()`。解压过程和之前的标准解压过程基本类似。
 
-jpeg_read_raw_data() returns one MCU row per call, and thus you must pass a
-buffer of at least max_v_samp_factor*block_size scanlines (scanline counting
-is the same as for raw-data compression).  The buffer you pass must be large
-enough to hold the actual data plus padding to DCT-block boundaries.  As with
-compression, any entirely dummy DCT blocks are not processed so you need not
-allocate space for them, but the total scanline count includes them.  The
-above example of computing buffer dimensions for raw-data compression is
-equally valid for decompression.
+&ensp;&ensp;&ensp;&ensp;调用`jpeg_read_raw_data()`返回一个MCU row，所以你必须传递至少`max_v_samp_factor*block_size`个扫描行的buffer。你所传递的buffer必须足够大，最少能够容纳实际的数据加上DCT-block补齐的边界数据。和压缩相比，解压不处理额外的虚假DCT block，所以你不必为此分配空间，但是total scanline数量是包含额外的DCT block的。上面的计算buffer维度的例子也适用于解压过程。
 
-Input suspension is supported with raw-data decompression: if the data source
-module suspends, jpeg_read_raw_data() will return 0.  You can also use
-buffered-image mode to read raw data in multiple passes.
+解压支持suspension输入: 如果data source
+module挂起，`jpeg_read_raw_data()`将返回0。你可以在multiple passes情况下使用buffered-image mode来读取输入。
 
 
 ## Really raw data: DCT coefficients
