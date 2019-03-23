@@ -12,14 +12,14 @@
 #include <string.h>
 
 
-typedef struct
+typedef struct _decoded_rgb_t
 {
     int image_width;
     int image_height;
     JSAMPLE* buffer_ptr;
 }decoded_rgb_t;
 
-typedef struct
+typedef struct _decoded_yuv_t
 {
     int image_width;
     int image_height;
@@ -42,8 +42,8 @@ typedef struct my_error_mgr * my_error_ptr;
 
 static JSAMPLE* buffer = NULL;
 
-const char leth[] = { 0x49, 0x49, 0x2a, 0x00 };	// Little endian TIFF header
-const char beth[] = { 0x4d, 0x4d, 0x00, 0x2a };	// Big endian TIFF header
+//const char leth[] = { 0x49, 0x49, 0x2a, 0x00 };	// Little endian TIFF header
+//const char beth[] = { 0x4d, 0x4d, 0x00, 0x2a };	// Big endian TIFF header
 /*
  * Here's the routine that will replace the standard error_exit method:
  */
@@ -64,77 +64,96 @@ METHODDEF(void) my_error_exit(j_common_ptr cinfo)
 
 DLL_API int read_rgb_from_JPEG_file (char * filename, decoded_rgb_t* out_rgb)
 {
-  struct jpeg_decompress_struct cinfo;
-  struct my_error_mgr jerr;
+    struct jpeg_decompress_struct cinfo;
+    struct my_error_mgr jerr;
 
-  FILE * infile;
-  JSAMPARRAY buffer_line;
-  JSAMPROW line;
-  int row_stride;
+    FILE * infile;
+    JSAMPARRAY buffer_line;
+    JSAMPROW line;
+    int row_stride;
 
-  printf("run %s\n", __FUNCTION__);
-  if ((infile = fopen(filename, "rb")) == NULL) {
-    fprintf(stderr, "can't open %s\n", filename);
-    return -1;
-  }
+    printf("run %s\n", __FUNCTION__);
+    if ((infile = fopen(filename, "rb")) == NULL) {
+        fprintf(stderr, "can't open %s\n", filename);
+        return -1;
+    }
 
-  cinfo.err = jpeg_std_error(&jerr.pub);
-  jerr.pub.error_exit = my_error_exit;
-  if (setjmp(jerr.setjmp_buffer)) {
+    cinfo.err = jpeg_std_error(&jerr.pub);
+    jerr.pub.error_exit = my_error_exit;
+    if (setjmp(jerr.setjmp_buffer)) {
+        //jpeg_destroy_decompress(&cinfo);
+        fclose(infile);
+        return -1;
+    }
+    jpeg_create_decompress(&cinfo);
+
+
+    jpeg_stdio_src(&cinfo, infile);
+
+    //jpeg_save_markers(&cinfo, JPEG_APP0, 0xffff);
+    jpeg_save_markers(&cinfo, JPEG_APP0+1, 0xffff);
+
+    (void) jpeg_read_header(&cinfo, TRUE);
+
+    jpeg_saved_marker_ptr mark_list_ptr = cinfo.marker_list;
+
+    while (mark_list_ptr != NULL)
+    {
+        if (mark_list_ptr->marker == JPEG_APP0+1)
+            break;
+        mark_list_ptr = mark_list_ptr->next;
+    }
+
+    if (mark_list_ptr != NULL)
+    {
+        char exif_code[6] = {'\0'};
+        memcpy(exif_code, mark_list_ptr->data, 6 * sizeof(char));
+        printf("%s\n", exif_code);
+    }
+
+    (void) jpeg_start_decompress(&cinfo);
+
+    row_stride = cinfo.output_width * cinfo.output_components;
+
+    line = (JSAMPROW)malloc(sizeof(JSAMPLE)*row_stride);
+    if (line == NULL)
+    {
+        printf("malloc line buffer fail!\n");
+        jpeg_destroy_decompress(&cinfo);
+        fclose(infile);
+        return -1;
+    }
+    buffer_line = &line;
+
+    buffer = malloc(sizeof(JSAMPLE)*row_stride*cinfo.output_height);
+    if (buffer == NULL)
+    {
+        printf("malloc buffer fail!\n");
+        jpeg_destroy_decompress(&cinfo);
+        fclose(infile);
+        free(line);
+        return -1;
+    }
+    printf("buffer address=%p\n", buffer);
+
+    while (cinfo.output_scanline < cinfo.output_height)
+    {
+        (void) jpeg_read_scanlines(&cinfo, buffer_line, 1);
+        //printf("%d\n",cinfo.output_scanline);
+        memcpy(&buffer[row_stride*(cinfo.output_scanline-1)], buffer_line[0], row_stride);
+    }
+    out_rgb->buffer_ptr = buffer;
+    out_rgb->image_width = cinfo.output_width;
+    out_rgb->image_height = cinfo.output_height;
+
+    (void) jpeg_finish_decompress(&cinfo);
+
     jpeg_destroy_decompress(&cinfo);
+
     fclose(infile);
-    return -1;
-  }
-  jpeg_create_decompress(&cinfo);
+    free(line);
 
-
-  jpeg_stdio_src(&cinfo, infile);
-
-  (void) jpeg_read_header(&cinfo, TRUE);
-
-  (void) jpeg_start_decompress(&cinfo);
-
-  row_stride = cinfo.output_width * cinfo.output_components;
-
-  line = (JSAMPROW)malloc(sizeof(JSAMPLE)*row_stride);
-  if (line == NULL)
-  {
-      printf("malloc line buffer fail!\n");
-      jpeg_destroy_decompress(&cinfo);
-      fclose(infile);
-      return -1;
-  }
-  buffer_line = &line;
-
-  buffer = malloc(sizeof(JSAMPLE)*row_stride*cinfo.output_height);
-  if (buffer == NULL)
-  {
-      printf("malloc buffer fail!\n");
-      jpeg_destroy_decompress(&cinfo);
-      fclose(infile);
-      free(line);
-      return -1;
-  }
-  printf("buffer address=%p\n", buffer);
-
-  while (cinfo.output_scanline < cinfo.output_height)
-  {
-    (void) jpeg_read_scanlines(&cinfo, buffer_line, 1);
-    //printf("%d\n",cinfo.output_scanline);
-    memcpy(&buffer[row_stride*(cinfo.output_scanline-1)], buffer_line[0], row_stride);
-  }
-  out_rgb->buffer_ptr = buffer;
-  out_rgb->image_width = cinfo.output_width;
-  out_rgb->image_height = cinfo.output_height;
-
-  (void) jpeg_finish_decompress(&cinfo);
-
-  jpeg_destroy_decompress(&cinfo);
-
-  fclose(infile);
-  free(line);
-
-  return 0;
+    return 0;
 }
 
 
@@ -345,135 +364,4 @@ DLL_API int release_buffer()
         free(buffer);
     }
     return 0;
-}
-
-static gint get_orientation(j_decompress_ptr cinfo)
-{
-    /* This function looks through the meta data in the libjpeg decompress structure to
-       determine if an EXIF Orientation tag is present and if so return its value (1-8).
-       If no EXIF Orientation tag is found 0 (zero) is returned. */
-
-    guint   i;              /* index into working buffer */
-    guint   orient_tag_id;  /* endianed version of orientation tag ID */
-    guint   ret;            /* Return value */
-    guint   offset;        	/* de-endianed offset in various situations */
-    guint   tags;           /* number of tags in current ifd */
-    guint   type;           /* de-endianed type of tag used as index into types[] */
-    guint   count;          /* de-endianed count of elements in a tag */
-    guint   tiff = 0;   	/* offset to active tiff header */
-    guint   endian = 0;   	/* detected endian of data */
-
-    jpeg_saved_marker_ptr exif_marker;  /* Location of the Exif APP1 marker */
-    jpeg_saved_marker_ptr cmarker;	    /* Location to check for Exif APP1 marker */
-
-    /* check for Exif marker (also called the APP1 marker) */
-    exif_marker = NULL;
-    cmarker = cinfo->marker_list;
-    while (cmarker) {
-        if (cmarker->marker == EXIF_JPEG_MARKER) {
-            /* The Exif APP1 marker should contain a unique
-               identification string ("Exif\0\0"). Check for it. */
-            if (!memcmp(cmarker->data, EXIF_IDENT_STRING, 6)) {
-                exif_marker = cmarker;
-            }
-        }
-        cmarker = cmarker->next;
-    }
-
-    /* Did we find the Exif APP1 marker? */
-    if (exif_marker == NULL)
-        return 0;
-
-    /* Do we have enough data? */
-    if (exif_marker->data_length < 32)
-        return 0;
-
-    /* Check for TIFF header and catch endianess */
-    i = 0;
-
-    /* Just skip data until TIFF header - it should be within 16 bytes from marker start.
-       Normal structure relative to APP1 marker -
-        0x0000: APP1 marker entry = 2 bytes
-        0x0002: APP1 length entry = 2 bytes
-        0x0004: Exif Identifier entry = 6 bytes
-        0x000A: Start of TIFF header (Byte order entry) - 4 bytes
-                - This is what we look for, to determine endianess.
-        0x000E: 0th IFD offset pointer - 4 bytes
-
-        exif_marker->data points to the first data after the APP1 marker
-        and length entries, which is the exif identification string.
-        The TIFF header should thus normally be found at i=6, below,
-        and the pointer to IFD0 will be at 6+4 = 10.
-    */
-
-    while (i < 16) {
-
-        /* Little endian TIFF header */
-        if (memcmp(&exif_marker->data[i], leth, 4) == 0) {
-            endian = G_LITTLE_ENDIAN;
-        }
-
-        /* Big endian TIFF header */
-        else if (memcmp(&exif_marker->data[i], beth, 4) == 0) {
-            endian = G_BIG_ENDIAN;
-        }
-
-        /* Keep looking through buffer */
-        else {
-            i++;
-            continue;
-        }
-        /* We have found either big or little endian TIFF header */
-        tiff = i;
-        break;
-    }
-
-    /* So did we find a TIFF header or did we just hit end of buffer? */
-    if (tiff == 0)
-        return 0;
-
-    /* Endian the orientation tag ID, to locate it more easily */
-    orient_tag_id = ENDIAN16_IT(0x112);
-
-    /* Read out the offset pointer to IFD0 */
-    offset = de_get32(&exif_marker->data[i] + 4, endian);
-    i = i + offset;
-
-    /* Check that we still are within the buffer and can read the tag count */
-    if ((i + 2) > exif_marker->data_length)
-        return 0;
-
-    /* Find out how many tags we have in IFD0. As per the TIFF spec, the first
-       two bytes of the IFD contain a count of the number of tags. */
-    tags = de_get16(&exif_marker->data[i], endian);
-    i = i + 2;
-
-    /* Check that we still have enough data for all tags to check. The tags
-       are listed in consecutive 12-byte blocks. The tag ID, type, size, and
-       a pointer to the actual value, are packed into these 12 byte entries. */
-    if ((i + tags * 12) > exif_marker->data_length)
-        return 0;
-
-    /* Check through IFD0 for tags of interest */
-    while (tags--) {
-        type = de_get16(&exif_marker->data[i + 2], endian);
-        count = de_get32(&exif_marker->data[i + 4], endian);
-
-        /* Is this the orientation tag? */
-        if (memcmp(&exif_marker->data[i], (char *)&orient_tag_id, 2) == 0) {
-
-            /* Check that type and count fields are OK. The orientation field
-               will consist of a single (count=1) 2-byte integer (type=3). */
-            if (type != 3 || count != 1) return 0;
-
-            /* Return the orientation value. Within the 12-byte block, the
-               pointer to the actual data is at offset 8. */
-            ret = de_get16(&exif_marker->data[i + 8], endian);
-            return ret <= 8 ? ret : 0;
-        }
-        /* move the pointer to the next 12-byte tag field. */
-        i = i + 12;
-    }
-
-    return 0; /* No EXIF Orientation tag found */
 }
