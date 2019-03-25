@@ -12,8 +12,47 @@
 #include <string.h>
 
 
+typedef struct _Tiff_header
+{
+    char endian_order[2];//"II" or "MM"
+    unsigned short tiff_num; //must be 42
+    unsigned int first_ifd_offset;
+}Tiff_header;
+
+typedef struct _IFD_entry
+{
+    unsigned short tag;
+    unsigned short type;
+    unsigned int count;
+    unsigned int offset;
+}IFD_entry;
+
+typedef struct _IFD
+{
+    unsigned short IFD_entry_cnt;
+    IFD_entry* entry_list;
+    unsigned int next_IFD_offset;
+}IFD;
+
+static unsigned short convertBigEndian2LittenEndian_u16(unsigned short in)
+{
+    unsigned short high = (in & 0x00ff) << 8;
+    unsigned short low = (in & 0xff00) >> 8;
+    return high | low;
+}
+
+static unsigned int convertBigEndian2LittenEndian_u32(unsigned int in)
+{
+    unsigned int a0 = (in & 0x000000ff) << 24;
+    unsigned int a1 = (in & 0x0000ff00) << 8;
+    unsigned int a2 = (in & 0x00ff0000) >> 8;
+    unsigned int a3 = (in & 0xff000000) >> 24;
+    return a0 | a1 | a2 | a3;
+}
+
 typedef struct _decoded_rgb_t
 {
+    int orientation;
     int image_width;
     int image_height;
     JSAMPLE* buffer_ptr;
@@ -21,6 +60,7 @@ typedef struct _decoded_rgb_t
 
 typedef struct _decoded_yuv_t
 {
+    int orientation;
     int image_width;
     int image_height;
     int buffer_y_width;
@@ -42,8 +82,6 @@ typedef struct my_error_mgr * my_error_ptr;
 
 static JSAMPLE* buffer = NULL;
 
-//const char leth[] = { 0x49, 0x49, 0x2a, 0x00 };	// Little endian TIFF header
-//const char beth[] = { 0x4d, 0x4d, 0x00, 0x2a };	// Big endian TIFF header
 /*
  * Here's the routine that will replace the standard error_exit method:
  */
@@ -61,99 +99,200 @@ METHODDEF(void) my_error_exit(j_common_ptr cinfo)
     longjmp(myerr->setjmp_buffer, 1);
 }
 
+static unsigned int get_orientation(jpeg_saved_marker_ptr marker_ptr)
+{
+    if (marker_ptr == NULL)
+        return 1;
+    while (marker_ptr != NULL && marker_ptr->marker != JPEG_APP0 + 1)
+    {
+        marker_ptr = marker_ptr->next;
+    }
+    if (marker_ptr == NULL)
+        return 1;
+
+    printf("marker:%d, %d, %d\n", marker_ptr->marker, marker_ptr->original_length, marker_ptr->data_length);
+
+    char exif_code[6] = { '\0' };
+    memcpy(exif_code, marker_ptr->data, 6);
+    if (strcmp(exif_code, "Exif\0") != 0)
+    {
+        printf("warnning: no exif found.\n");
+        return 1;
+    }
+    else
+    {
+        printf("exif found !\n");
+    }
+
+    Tiff_header* header = (Tiff_header*)(marker_ptr->data + 6); // "Exif\0\0"
+    printf("tiff byte order: %c%c || MM=big-endian, II=litter-endian\n", header->endian_order[0], header->endian_order[1]);
+    int endian = 0;//0 = litter-endian, 1 = big-endian
+    if (header->endian_order[0] == 'M' && header->endian_order[1] == 'M')
+        endian = 1;
+    if (endian == 0)
+    {
+        printf("tiff magic number:%d\n", header->tiff_num);
+        printf("APP1 firset IFD offset = %d\n", header->first_ifd_offset);
+    }
+    else
+    {
+        header->tiff_num = convertBigEndian2LittenEndian_u16(header->tiff_num);
+        printf("tiff magic number:%d\n", header->tiff_num);
+        header->first_ifd_offset = convertBigEndian2LittenEndian_u32(header->first_ifd_offset);
+        printf("APP1 firset IFD offset = %d\n", header->first_ifd_offset);
+    }
+
+    unsigned int ifd_offset = header->first_ifd_offset;
+    if (ifd_offset < 8)
+    {
+        printf("no ifd in APP1\n");
+        return 1;
+    }
+    int find_orientation_tag = FALSE;
+    unsigned short orientation = 1;
+
+    while (ifd_offset >= 8)
+    {
+        IFD ifd_0;
+        ifd_0.IFD_entry_cnt = *(unsigned short*)(marker_ptr->data + 6 + ifd_offset);
+        if (endian == 1)
+        {
+            ifd_0.IFD_entry_cnt = convertBigEndian2LittenEndian_u16(ifd_0.IFD_entry_cnt);
+        }
+        printf("ifd entry cnt = %d\n", ifd_0.IFD_entry_cnt);
+
+        ifd_0.entry_list = (IFD_entry*)(marker_ptr->data + 6 + ifd_offset + 2);
+        int i = 0;
+        while (i < ifd_0.IFD_entry_cnt)
+        {
+            IFD_entry* entry = ifd_0.entry_list + i;
+            if (endian == 1)
+            {
+                entry->tag = convertBigEndian2LittenEndian_u16(entry->tag);
+            }
+            printf("ifd  tag:%d\n", entry->tag);
+            if (entry->tag == 274)
+            {
+                find_orientation_tag = TRUE;
+                orientation = (unsigned short)entry->offset;
+                if (endian == 1)
+                {
+                    orientation = convertBigEndian2LittenEndian_u16(orientation);
+                    printf("orientation: %d\n", orientation);
+                }
+            }
+            i++;
+        }
+
+        ifd_0.next_IFD_offset = *(unsigned int*)(marker_ptr->data + 6 + ifd_offset + ifd_0.IFD_entry_cnt * 12 + 2);
+        if (endian == 1)
+        {
+            ifd_0.next_IFD_offset = convertBigEndian2LittenEndian_u32(ifd_0.next_IFD_offset);
+        }
+        ifd_offset = ifd_0.next_IFD_offset;
+        printf("next ifd (offset relative to tiff header):%d\n", ifd_offset);
+    }
+
+
+    if (find_orientation_tag == FALSE)
+    {
+        printf("no orientation tag found !\n");
+        return 1;
+    }
+    else
+    {
+        //IFD_entry* orientation_entry = exif_IFD.entry_list + j;
+        //if (endian == 1)
+        //    orientation_entry->offset = convertBigEndian2LittenEndian_u32(orientation_entry->offset);
+        //return orientation_entry->offset;
+        return orientation;
+    }
+}
 
 DLL_API int read_rgb_from_JPEG_file (char * filename, decoded_rgb_t* out_rgb)
 {
-    struct jpeg_decompress_struct cinfo;
-    struct my_error_mgr jerr;
+  struct jpeg_decompress_struct cinfo;
+  jpeg_saved_marker_ptr marker_ptr;
+  struct my_error_mgr jerr;
 
-    FILE * infile;
-    JSAMPARRAY buffer_line;
-    JSAMPROW line;
-    int row_stride;
+  FILE * infile;
+  JSAMPARRAY buffer_line;
+  JSAMPROW line;
+  int row_stride;
 
-    printf("run %s\n", __FUNCTION__);
-    if ((infile = fopen(filename, "rb")) == NULL) {
-        fprintf(stderr, "can't open %s\n", filename);
-        return -1;
-    }
+  printf("run %s\n", __FUNCTION__);
+  if ((infile = fopen(filename, "rb")) == NULL) 
+  {
+    fprintf(stderr, "can't open %s\n", filename);
+    return -1;
+  }
 
-    cinfo.err = jpeg_std_error(&jerr.pub);
-    jerr.pub.error_exit = my_error_exit;
-    if (setjmp(jerr.setjmp_buffer)) {
-        //jpeg_destroy_decompress(&cinfo);
-        fclose(infile);
-        return -1;
-    }
-    jpeg_create_decompress(&cinfo);
-
-
-    jpeg_stdio_src(&cinfo, infile);
-
-    //jpeg_save_markers(&cinfo, JPEG_APP0, 0xffff);
-    jpeg_save_markers(&cinfo, JPEG_APP0+1, 0xffff);
-
-    (void) jpeg_read_header(&cinfo, TRUE);
-
-    jpeg_saved_marker_ptr mark_list_ptr = cinfo.marker_list;
-
-    while (mark_list_ptr != NULL)
-    {
-        if (mark_list_ptr->marker == JPEG_APP0+1)
-            break;
-        mark_list_ptr = mark_list_ptr->next;
-    }
-
-    if (mark_list_ptr != NULL)
-    {
-        char exif_code[6] = {'\0'};
-        memcpy(exif_code, mark_list_ptr->data, 6 * sizeof(char));
-        printf("%s\n", exif_code);
-    }
-
-    (void) jpeg_start_decompress(&cinfo);
-
-    row_stride = cinfo.output_width * cinfo.output_components;
-
-    line = (JSAMPROW)malloc(sizeof(JSAMPLE)*row_stride);
-    if (line == NULL)
-    {
-        printf("malloc line buffer fail!\n");
-        jpeg_destroy_decompress(&cinfo);
-        fclose(infile);
-        return -1;
-    }
-    buffer_line = &line;
-
-    buffer = malloc(sizeof(JSAMPLE)*row_stride*cinfo.output_height);
-    if (buffer == NULL)
-    {
-        printf("malloc buffer fail!\n");
-        jpeg_destroy_decompress(&cinfo);
-        fclose(infile);
-        free(line);
-        return -1;
-    }
-    printf("buffer address=%p\n", buffer);
-
-    while (cinfo.output_scanline < cinfo.output_height)
-    {
-        (void) jpeg_read_scanlines(&cinfo, buffer_line, 1);
-        //printf("%d\n",cinfo.output_scanline);
-        memcpy(&buffer[row_stride*(cinfo.output_scanline-1)], buffer_line[0], row_stride);
-    }
-    out_rgb->buffer_ptr = buffer;
-    out_rgb->image_width = cinfo.output_width;
-    out_rgb->image_height = cinfo.output_height;
-
-    (void) jpeg_finish_decompress(&cinfo);
-
+  cinfo.err = jpeg_std_error(&jerr.pub);
+  jerr.pub.error_exit = my_error_exit;
+  if (setjmp(jerr.setjmp_buffer)) 
+  {
     jpeg_destroy_decompress(&cinfo);
-
     fclose(infile);
-    free(line);
+    return -1;
+  }
+  jpeg_create_decompress(&cinfo);
 
-    return 0;
+
+  jpeg_stdio_src(&cinfo, infile);
+
+  jpeg_save_markers(&cinfo, JPEG_APP0 + 1, 0xffff);
+
+  (void) jpeg_read_header(&cinfo, TRUE);
+
+  marker_ptr = cinfo.marker_list;
+  
+  int orientation = get_orientation(marker_ptr);
+
+  (void) jpeg_start_decompress(&cinfo);
+
+  row_stride = cinfo.output_width * cinfo.output_components;
+
+  line = (JSAMPROW)malloc(sizeof(JSAMPLE)*row_stride);
+  if (line == NULL)
+  {
+      printf("malloc line buffer fail!\n");
+      jpeg_destroy_decompress(&cinfo);
+      fclose(infile);
+      return -1;
+  }
+  buffer_line = &line;
+
+  buffer = malloc(sizeof(JSAMPLE)*row_stride*cinfo.output_height);
+  if (buffer == NULL)
+  {
+      printf("malloc buffer fail!\n");
+      jpeg_destroy_decompress(&cinfo);
+      fclose(infile);
+      free(line);
+      return -1;
+  }
+  printf("buffer address=%p\n", buffer);
+
+  while (cinfo.output_scanline < cinfo.output_height)
+  {
+    (void) jpeg_read_scanlines(&cinfo, buffer_line, 1);
+    //printf("%d\n",cinfo.output_scanline);
+    memcpy(&buffer[row_stride*(cinfo.output_scanline-1)], buffer_line[0], row_stride);
+  }
+  out_rgb->orientation = orientation;
+  out_rgb->buffer_ptr = buffer;
+  out_rgb->image_width = cinfo.output_width;
+  out_rgb->image_height = cinfo.output_height;
+  printf("image width = %d, image height = %d\n", out_rgb->image_width, out_rgb->image_height);
+
+  (void) jpeg_finish_decompress(&cinfo);
+
+  jpeg_destroy_decompress(&cinfo);
+
+  fclose(infile);
+  free(line);
+
+  return 0;
 }
 
 
@@ -203,6 +342,8 @@ DLL_API int read_raw_data_from_JPEG_file(char * filename, decoded_yuv_t* out_yuv
 
     jpeg_stdio_src(&cinfo, infile);
 
+    jpeg_save_markers(&cinfo, JPEG_APP0 + 1, 0xffff);
+
     (void)jpeg_read_header(&cinfo, TRUE);
     //注意，在读取了头信息以后，这个时候获取了默认解压参数，我们需要做3个修改
     //1, 修改输出数据的色域，默认是rgb，这里指定为YCbCr
@@ -221,6 +362,7 @@ DLL_API int read_raw_data_from_JPEG_file(char * filename, decoded_yuv_t* out_yuv
     JCS_BG_YCC=7		big gamut Y/Cb/Cr, bg-sYCC \n");
     printf("jpeg file color space: %d, out file color space:%d\n", cinfo.jpeg_color_space, cinfo.out_color_space);
 
+    int orientation = get_orientation(cinfo.marker_list);
     (void)jpeg_start_decompress(&cinfo);
     //调用jpeg_start_decompress后, cinfo会获取到头yuv比例，比如yuv420的话，cinfo.comp_info[0].h_samp_factor/v_samp_factor = 2， uv的 h_samp_factor/v_samp_factor = 1
     if (cinfo.comp_info != NULL) {
@@ -338,6 +480,7 @@ DLL_API int read_raw_data_from_JPEG_file(char * filename, decoded_yuv_t* out_yuv
     //fclose(outfile);
     free(y_ptr); free(u_ptr); free(v_ptr);
     //free(buffer);
+    out_yuv->orientation = orientation;
     out_yuv->buffer_ptr = buffer;
     out_yuv->image_width = cinfo.image_width;
     out_yuv->image_height = cinfo.image_height;
@@ -365,3 +508,11 @@ DLL_API int release_buffer()
     }
     return 0;
 }
+
+/*int main(int argc, char* argv[])
+{
+    decoded_yuv_t yuv;
+    read_raw_data_from_JPEG_file(argv[1], &yuv);
+    release_buffer();
+    return 0;
+}*/
